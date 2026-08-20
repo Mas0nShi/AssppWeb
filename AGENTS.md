@@ -137,8 +137,8 @@ The backend proxies the bag endpoint via `GET /api/bag?guid=<deviceId>` using No
 - IndexedDB for credential storage (via `idb`)
 - `libcurl.js` (WASM) for browser-side TLS 1.3 via Mbed TLS — connects through Wisp protocol
 - `appleRequest()` in `frontend/src/apple/request.ts` wraps `libcurl.fetch` for all Apple API calls and forces HTTP/1.1 (`_libcurl_http_version: 1.1`)
-- Bag endpoint (`frontend/src/apple/bag.ts`) uses backend proxy (`/api/bag`) and falls back to `https://auth.itunes.apple.com/auth/v1/native/fast/` when `authenticateAccount` is missing, deprecated, or the bag fetch fails
-- Authentication (`frontend/src/apple/authenticate.ts`) resolves bag endpoint, then sets `guid` via URL query manipulation to avoid duplicate/malformed query parameters
+- Bag endpoint (`frontend/src/apple/bag.ts`) uses backend proxy (`/api/bag`) and falls back to `https://auth.itunes.apple.com/auth/v1/native/fast/` when `authenticateAccount` is missing or the bag fetch fails; bag-provided legacy endpoints pass through unchanged
+- Authentication (`frontend/src/apple/authenticate.ts`) resolves the bag endpoint, sends the XML plist with Apple's required `application/x-www-form-urlencoded` content type, falls back from rejected native auth responses to the legacy MZFinance endpoint, and preserves the POST body across pod redirects
 - Plist build/parse (`frontend/src/apple/plist.ts`) uses native XML builder and browser-native `DOMParser`
 - Cookie helper (`frontend/src/apple/cookies.ts`) — `extractAndMergeCookies(rawHeaders, existingCookies)` replaces the repeated extract-and-merge pattern across all Apple protocol files
 

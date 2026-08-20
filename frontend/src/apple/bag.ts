@@ -7,29 +7,21 @@ export interface BagOutput {
 
 export const defaultAuthURL =
   "https://auth.itunes.apple.com/auth/v1/native/fast/";
+export const legacyAuthURL =
+  "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate";
 
 const NATIVE_AUTH_HOST = "auth.itunes.apple.com";
-const LEGACY_AUTH_HOST = /^(?:p\d+-)?buy\.itunes\.apple\.com$/;
-const LEGACY_AUTH_PATH =
-  "/WebObjects/MZFinance.woa/wa/authenticate";
 
 // The bag advertises the native auth endpoint without the /fast/ sub-path that
 // the login flow requires; the no-trailing-slash variant 301s to an HTML page.
-// Apple still advertises the legacy MZFinance endpoint in some bag responses,
-// but that endpoint now returns HTTP 403 with an empty body. Replace only that
-// retired endpoint with the native authentication endpoint.
+// Legacy endpoints pass through unchanged and are also used by authenticate()
+// when Apple rejects the native endpoint with an empty response.
 export function normalizeAuthURL(rawURL: string): string {
   let url: URL;
   try {
     url = new URL(rawURL);
   } catch {
     return rawURL;
-  }
-  if (
-    LEGACY_AUTH_HOST.test(url.hostname) &&
-    url.pathname === LEGACY_AUTH_PATH
-  ) {
-    return defaultAuthURL;
   }
   if (url.hostname !== NATIVE_AUTH_HOST) {
     return rawURL;
