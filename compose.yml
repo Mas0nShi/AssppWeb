@@ -8,11 +8,28 @@ services:
     environment:
       - DATA_DIR=/data
       - PORT=8080
+      - ANISETTE_URL=http://anisette:6969
       # - DOWNLOAD_THREADS=8
       # - ACCESS_PASSWORD=your_password_here
     restart: unless-stopped
+    depends_on:
+      - anisette
     logging:
       driver: "json-file"
       options:
         max-size: "128m"
         max-file: "5"
+
+  anisette:
+    image: dadoum/anisette-v3-server:latest
+    volumes:
+      - anisette-data:/home/Alcoholic/.config/anisette-v3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "16m"
+        max-file: "3"
+
+volumes:
+  anisette-data:

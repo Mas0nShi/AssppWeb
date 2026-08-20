@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPlist, parsePlist } from "../../src/apple/plist";
+import { buildPlist, parsePlist, parsePlistLoose } from "../../src/apple/plist";
 
 describe("apple/plist", () => {
   describe("buildPlist", () => {
@@ -67,6 +67,14 @@ describe("apple/plist", () => {
 
       expect(parsed.email).toBe("test@test.com");
       expect(parsed.value).toBe("hello world");
+    });
+
+    it("should parse Apple's bare GSA dict response", () => {
+      const result = parsePlistLoose(
+        '<dict><key>Status</key><dict><key>ec</key><integer>-20101</integer></dict></dict>',
+      );
+
+      expect(result.Status.ec).toBe(-20101);
     });
   });
 });

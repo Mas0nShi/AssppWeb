@@ -57,6 +57,34 @@ export function parsePlist(xml: string): any {
   return parseNode(firstChild);
 }
 
+/**
+ * Apple GSA sometimes returns a bare <dict> instead of a complete <plist>.
+ * Normalize both forms before handing the document to the strict parser.
+ */
+export function parsePlistLoose(xml: string): any {
+  const trimmed = xml.trim();
+  if (!trimmed) {
+    throw new Error('Invalid plist: empty response');
+  }
+
+  const plistStart = trimmed.indexOf('<plist');
+  const plistEnd = trimmed.lastIndexOf('</plist>');
+  if (plistStart >= 0 && plistEnd >= plistStart) {
+    return parsePlist(trimmed.slice(plistStart, plistEnd + '</plist>'.length));
+  }
+
+  const dictStart = trimmed.indexOf('<dict');
+  const dictEnd = trimmed.lastIndexOf('</dict>');
+  if (dictStart < 0 || dictEnd < dictStart) {
+    return parsePlist(trimmed);
+  }
+
+  const dict = trimmed.slice(dictStart, dictEnd + '</dict>'.length);
+  return parsePlist(
+    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0">${dict}</plist>`,
+  );
+}
+
 function parseNode(node: Element): any {
   switch (node.nodeName) {
     case "dict": {

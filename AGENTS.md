@@ -25,12 +25,12 @@ The server is a blind TCP proxy. It NEVER sees Apple credentials.
 │    passwordToken, DSID, deviceIdentifier, pod       │
 │                                                      │
 │  Apple Protocol (libcurl.js WASM + Mbed TLS 1.3):   │
-│    1. Bag fetch → backend proxy → resolve auth URL   │
-│       (fallback to default auth endpoint if missing)  │
-│    2. Authenticate → get token, cookies, pod         │
-│    3. Purchase → acquire license                     │
-│    4. Download info → get CDN URL + SINFs + metadata │
-│    5. Version listing/lookup                         │
+│    1. Fetch anisette device-attestation headers      │
+│    2. GSA SRP + SPD decrypt + optional 2FA           │
+│    3. Exchange PET for Store token, cookies, pod     │
+│    4. Purchase → acquire license                     │
+│    5. Download info → get CDN URL + SINFs + metadata │
+│    6. Version listing/lookup                         │
 │                                                      │
 │  TLS 1.3 encrypted via Wisp protocol over WebSocket  │
 └──────────────────────┬───────────────────────────────┘
@@ -42,6 +42,9 @@ The server is a blind TCP proxy. It NEVER sees Apple credentials.
 │  Bag proxy: GET /api/bag?guid=<id>                   │
 │    - Fetches init.itunes.apple.com/bag.xml via HTTPS │
 │    - Returns public Apple service URLs (no creds)    │
+│  Anisette proxy: GET /api/anisette                    │
+│    - Fetches device-attestation headers only          │
+│    - Apple credentials never pass through this route  │
 │                                                      │
 │  After client obtains download info:                 │
 │    Client POSTs: { downloadURL, sinfs, metadata }    │
@@ -106,6 +109,7 @@ The Wisp server validates target hosts via `hostname_whitelist` in `backend/src/
 - `auth.itunes.apple.com` — bag-resolved auth endpoint
 - `buy.itunes.apple.com` — purchase endpoint
 - `init.itunes.apple.com` — bag endpoint
+- `gsa.apple.com` — GSA SRP authentication and 2FA
 - `/^p\d+-buy\.itunes\.apple\.com$/` — pod-based hosts
 - Port restricted to `443` only
 - Direct IP targets blocked (`allow_direct_ip = false`)
@@ -138,7 +142,8 @@ The backend proxies the bag endpoint via `GET /api/bag?guid=<deviceId>` using No
 - `libcurl.js` (WASM) for browser-side TLS 1.3 via Mbed TLS — connects through Wisp protocol
 - `appleRequest()` in `frontend/src/apple/request.ts` wraps `libcurl.fetch` for all Apple API calls and forces HTTP/1.1 (`_libcurl_http_version: 1.1`)
 - Bag endpoint (`frontend/src/apple/bag.ts`) uses backend proxy (`/api/bag`) and falls back to `https://auth.itunes.apple.com/auth/v1/native/fast/` when `authenticateAccount` is missing or the bag fetch fails; bag-provided legacy endpoints pass through unchanged
-- Authentication (`frontend/src/apple/authenticate.ts`) resolves the bag endpoint, sends the XML plist with Apple's required `application/x-www-form-urlencoded` content type, falls back from rejected native auth responses to the legacy MZFinance endpoint, and preserves the POST body across pod redirects
+- Authentication (`frontend/src/apple/gsa.ts`) performs GSA SRP-6a, verifies M2, decrypts SPD, handles 2FA, extracts the PET, and exchanges it for the existing StoreServices token shape while preserving POST bodies and cookies across pod redirects
+- SRP and SPD cryptography (`frontend/src/apple/gsaCrypto.ts`) uses browser WebCrypto plus JavaScript `BigInt`; credentials and decrypted session data remain browser-side
 - Plist build/parse (`frontend/src/apple/plist.ts`) uses native XML builder and browser-native `DOMParser`
 - Cookie helper (`frontend/src/apple/cookies.ts`) — `extractAndMergeCookies(rawHeaders, existingCookies)` replaces the repeated extract-and-merge pattern across all Apple protocol files
 
@@ -231,6 +236,13 @@ E2E tests import from `./fixtures` instead of `@playwright/test`.
 WebSocket proxy tests use `location.host` to derive URLs dynamically, so they work both locally (`localhost:8080`) and in Docker (`asspp:8080`).
 
 Real-account Docker verification (2026-02-22): authentication succeeds through Wisp, and backend logs contain only connection/stream metadata (no Apple credentials, password tokens, or cookies).
+
+Random-credential GSA smoke test (requires a local anisette endpoint):
+
+```bash
+cd frontend
+GSA_LIVE=1 ANISETTE_SMOKE_URL=http://127.0.0.1:16969 npm exec vitest -- run tests/apple/gsa.live.test.ts
+```
 
 E2E tests cover:
 

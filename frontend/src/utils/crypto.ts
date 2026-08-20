@@ -27,7 +27,7 @@ async function deriveKey(
   return await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt,
+      salt: new Uint8Array(salt).buffer,
       iterations: ITERATIONS,
       hash: "SHA-256",
     },
