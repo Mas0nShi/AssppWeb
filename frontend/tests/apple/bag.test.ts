@@ -11,7 +11,7 @@ describe("apple/bag", () => {
     vi.restoreAllMocks();
   });
 
-  it("parses authenticateAccount from urlBag", async () => {
+  it("replaces the retired authenticateAccount URL from urlBag", async () => {
     const xml = buildPlist({
       urlBag: {
         authenticateAccount:
@@ -28,9 +28,7 @@ describe("apple/bag", () => {
 
     const result = await fetchBag("aabbccddeeff");
 
-    expect(result.authURL).toBe(
-      "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate",
-    );
+    expect(result.authURL).toBe(defaultAuthURL);
   });
 
   it("normalizes a native auth endpoint at the plist root to the /fast/ path", async () => {
@@ -106,10 +104,22 @@ describe("apple/bag", () => {
       ).toBe("https://auth.itunes.apple.com/auth/v1/native/fast/");
     });
 
-    it("leaves legacy endpoints on other hosts unchanged", () => {
+    it("replaces the retired MZFinance authentication endpoint", () => {
       const legacy =
         "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate";
-      expect(normalizeAuthURL(legacy)).toBe(legacy);
+      expect(normalizeAuthURL(legacy)).toBe(defaultAuthURL);
+    });
+
+    it("replaces a pod-scoped retired authentication endpoint", () => {
+      const legacy =
+        "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate?guid=old";
+      expect(normalizeAuthURL(legacy)).toBe(defaultAuthURL);
+    });
+
+    it("leaves other endpoints on the legacy host unchanged", () => {
+      const purchase =
+        "https://buy.itunes.apple.com/WebObjects/MZBuy.woa/wa/buyProduct";
+      expect(normalizeAuthURL(purchase)).toBe(purchase);
     });
   });
 });
