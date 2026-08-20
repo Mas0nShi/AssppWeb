@@ -2,7 +2,7 @@ import type { Account, Cookie } from "../types";
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
-import { fetchBag, defaultAuthURL } from "./bag";
+import { fetchBag, defaultAuthURL, legacyAuthURL } from "./bag";
 import i18n from "../i18n";
 
 export class AuthenticationError extends Error {
@@ -39,6 +39,16 @@ export async function authenticate(
 
   let currentAttempt = 0;
   let redirectAttempt = 0;
+  let usedLegacyFallback = requestHost !== "auth.itunes.apple.com";
+
+  const retryWithLegacyEndpoint = () => {
+    const legacyEndpoint = new URL(legacyAuthURL);
+    legacyEndpoint.searchParams.set("guid", deviceId);
+    requestHost = legacyEndpoint.hostname;
+    requestPath = `${legacyEndpoint.pathname}${legacyEndpoint.search}`;
+    usedLegacyFallback = true;
+    currentAttempt--;
+  };
 
   while (currentAttempt < 2 && redirectAttempt <= 3) {
     currentAttempt++;
@@ -56,7 +66,10 @@ export async function authenticate(
       const plistBody = buildPlist(body);
 
       const headers: Record<string, string> = {
-        "Content-Type": "application/x-apple-plist",
+        // Apple's auth endpoints still expect an XML plist payload, but now
+        // dispatch it by this legacy form content type. Sending
+        // application/x-apple-plist returns 204 with an empty body.
+        "Content-Type": "application/x-www-form-urlencoded",
       };
 
       const response = await appleRequest({
@@ -83,11 +96,25 @@ export async function authenticate(
       const podHeader = response.headers["pod"];
       const pod = podHeader || undefined;
 
+      const nativeAuthRequest = requestHost === "auth.itunes.apple.com";
+      if (
+        nativeAuthRequest &&
+        !usedLegacyFallback &&
+        [204, 403, 404, 503].includes(response.status)
+      ) {
+        retryWithLegacyEndpoint();
+        continue;
+      }
+
       // Handle redirect. The native /fast auth host can answer with 301 as
       // well as the usual 302, so follow the full set of redirect statuses.
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers["location"];
         if (!location) {
+          if (nativeAuthRequest && !usedLegacyFallback) {
+            retryWithLegacyEndpoint();
+            continue;
+          }
           throw new Error(i18n.t("errors.auth.redirectLocation"));
         }
         const url = new URL(location);
@@ -100,6 +127,10 @@ export async function authenticate(
 
       // Handle non-plist responses (e.g. 403 with empty body)
       if (!response.body.trim()) {
+        if (nativeAuthRequest && !usedLegacyFallback) {
+          retryWithLegacyEndpoint();
+          continue;
+        }
         throw new Error(
           i18n.t("errors.auth.emptyBody", { status: response.status }),
         );
