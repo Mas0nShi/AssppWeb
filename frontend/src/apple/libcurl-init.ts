@@ -1,4 +1,4 @@
-import { libcurl } from "libcurl.js/bundled";
+import { libcurl } from "../vendor/libcurl/libcurl_full.mjs";
 import { getAccessToken } from "../components/Auth/PasswordGate";
 
 let initialized = false;

@@ -1,0 +1,81 @@
+diff --git a/client/tools/curl.sh b/client/tools/curl.sh
+index 9ada337..9e86bc2 100755
+--- a/client/tools/curl.sh
++++ b/client/tools/curl.sh
+@@ -27,6 +27,7 @@ emconfigure ./configure --host i686-linux \
+   --enable-websockets --disable-ftp --disable-file --disable-gopher \
+   --disable-imap --disable-mqtt --disable-pop3 --disable-rtsp \
+   --disable-smb --disable-smtp --disable-telnet --disable-dict \
++  --without-ca-bundle --without-ca-path \
+   --with-mbedtls=$MBEDTLS_PREFIX --with-zlib=$ZLIB_PREFIX \
+   --with-brotli=$BROTLI_PREFIX --with-nghttp2=$NGHTTP2_PREFIX
+ 
+@@ -38,4 +39,4 @@ mkdir -p $PREFIX/lib
+ cp -r include/curl $PREFIX/include
+ cp lib/.libs/libcurl.a $PREFIX/lib
+ 
+-cd ../../
+\ No newline at end of file
++cd ../../
+diff --git a/client/tools/generate_cert.sh b/client/tools/generate_cert.sh
+index 28e99b8..dffb78b 100755
+--- a/client/tools/generate_cert.sh
++++ b/client/tools/generate_cert.sh
+@@ -8,11 +8,30 @@ set -x
+ CURL_PREFIX="$(realpath build/curl-wasm)"
+ CACERT_FILE="$(realpath build/cacert.pem)"
+ CACERT_HEADER="$CURL_PREFIX/include/cacert.h"
++APPLE_ROOT_DER="$(realpath build/AppleIncRootCertificate.cer)"
++APPLE_ROOT_PEM="$(realpath build/AppleIncRootCertificate.pem)"
++APPLE_ROOT_SHA256="B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24"
+ 
+ CACERT_DIR="$(dirname "$CACERT_FILE")"
+ REPLACE_STR="$(echo "$CACERT_DIR" | tr '/-' '_')"
+ 
+ if [ ! -f "$CACERT_FILE" ]; then
+   wget "https://curl.se/ca/cacert.pem" -O "$CACERT_FILE"
+-  python3 tools/gen_cert.py "$CACERT_FILE" > "$CACERT_HEADER"
+ fi
++
++# gsa.apple.com chains to the original Apple Root CA, which is intentionally
++# absent from Mozilla's public Web PKI bundle. Add only Apple's published root;
++# TLS hostname and chain verification remain enabled.
++wget "https://www.apple.com/appleca/AppleIncRootCertificate.cer" -O "$APPLE_ROOT_DER"
++openssl x509 -inform DER -in "$APPLE_ROOT_DER" -out "$APPLE_ROOT_PEM"
++ACTUAL_APPLE_ROOT_SHA256="$(openssl x509 -in "$APPLE_ROOT_PEM" -noout -fingerprint -sha256 | cut -d= -f2)"
++if [ "$ACTUAL_APPLE_ROOT_SHA256" != "$APPLE_ROOT_SHA256" ]; then
++  echo "Apple Root CA fingerprint mismatch" >&2
++  exit 1
++fi
++if ! grep -Fq "$(sed -n '2p' "$APPLE_ROOT_PEM")" "$CACERT_FILE"; then
++  printf '\n' >> "$CACERT_FILE"
++  cat "$APPLE_ROOT_PEM" >> "$CACERT_FILE"
++fi
++
++python3 tools/gen_cert.py "$CACERT_FILE" > "$CACERT_HEADER"
+diff --git a/client/tools/mbedtls.sh b/client/tools/mbedtls.sh
+index d373b2f..fa3eca8 100755
+--- a/client/tools/mbedtls.sh
++++ b/client/tools/mbedtls.sh
+@@ -16,11 +16,18 @@ git clone -b mbedtls-3.6.5 --recursive --depth=1 https://github.com/Mbed-TLS/mbe
+ cd mbedtls
+ 
+ emmake make CFLAGS="-O3" no_test -j$CORE_COUNT
+-make DESTDIR="$PREFIX" install
++
++# Mbed TLS 3.6.5's `install` target rebuilds the test programs with the host
++# compiler, even after the Emscripten-only `no_test` build above. Install only
++# the headers and static WASM libraries that libcurl.js actually links.
++mkdir -p "$PREFIX/include" "$PREFIX/lib"
++cp -r include/mbedtls include/psa "$PREFIX/include/"
++cp library/libmbedtls.a library/libmbedx509.a library/libmbedcrypto.a \
++  "$PREFIX/lib/"
+ 
+ rm -rf $PREFIX/bin
+ rm -rf $PREFIX/share
+ rm -rf $PREFIX/lib/pkgconfig
+ rm -rf $PREFIX/lib/*.la
+ 
+-cd ../../
+\ No newline at end of file
++cd ../../
